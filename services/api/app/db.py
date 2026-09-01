@@ -16,9 +16,16 @@ def db_path() -> Path:
 
 
 def connect() -> sqlite3.Connection:
-    conn = sqlite3.connect(db_path())
+    conn = sqlite3.connect(db_path(), timeout=30, check_same_thread=False)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys=ON")
     return conn
+
+
+def _ensure_column(conn: sqlite3.Connection, table: str, column: str, ddl: str) -> None:
+    columns = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+    if column not in columns:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {ddl}")
 
 
 def init_db() -> None:
@@ -26,6 +33,14 @@ def init_db() -> None:
         conn.executescript(
             """
             PRAGMA journal_mode=WAL;
+
+            CREATE TABLE IF NOT EXISTS libraries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                root TEXT NOT NULL UNIQUE,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                last_scanned_at TEXT
+            );
 
             CREATE TABLE IF NOT EXISTS photos (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -42,7 +57,25 @@ def init_db() -> None:
                 indexed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
 
+            CREATE TABLE IF NOT EXISTS scan_jobs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                library_root TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'queued',
+                found INTEGER NOT NULL DEFAULT 0,
+                indexed INTEGER NOT NULL DEFAULT 0,
+                skipped INTEGER NOT NULL DEFAULT 0,
+                errors INTEGER NOT NULL DEFAULT 0,
+                error_message TEXT,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                started_at TEXT,
+                finished_at TEXT
+            );
+
             CREATE INDEX IF NOT EXISTS idx_photos_sha256 ON photos(sha256);
             CREATE INDEX IF NOT EXISTS idx_photos_filename ON photos(filename);
+            CREATE INDEX IF NOT EXISTS idx_scan_jobs_status ON scan_jobs(status);
             """
         )
+        _ensure_column(conn, "photos", "perceptual_hash", "perceptual_hash TEXT")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_photos_perceptual_hash ON photos(perceptual_hash)")
+        conn.commit()
