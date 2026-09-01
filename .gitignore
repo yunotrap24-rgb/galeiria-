@@ -1,0 +1,42 @@
+# Secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Galeiria local data (never commit user media)
+data/
+.galeiria/
+*.db
+*.sqlite
+*.sqlite3
+thumbnails/
+media/
+library/
+photos/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Node / Tauri
+node_modules/
+dist/
+target/
+
+# Flutter / Android
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+build/
+android/.gradle/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
