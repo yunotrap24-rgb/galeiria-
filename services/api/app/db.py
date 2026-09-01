@@ -108,5 +108,10 @@ def init_db() -> None:
             """
         )
         _ensure_column(conn, "photos", "perceptual_hash", "perceptual_hash TEXT")
+        _ensure_column(conn, "photos", "metadata_json", "metadata_json TEXT")
+        _ensure_column(conn, "photos", "captured_at", "captured_at TEXT")
+        _ensure_column(conn, "photos", "software", "software TEXT")
+        _ensure_column(conn, "photos", "ai_generated_hint", "ai_generated_hint INTEGER NOT NULL DEFAULT 0")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_photos_perceptual_hash ON photos(perceptual_hash)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_photos_ai_generated_hint ON photos(ai_generated_hint)")
         conn.commit()
