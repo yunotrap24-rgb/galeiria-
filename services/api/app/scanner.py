@@ -7,6 +7,7 @@ from typing import Callable, Iterable
 from PIL import Image, ImageOps, UnidentifiedImageError
 
 from .db import connect, data_dir
+from .metadata import extract_image_metadata
 
 SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".tif", ".tiff"}
 THUMBNAIL_SIZE = (512, 512)
@@ -32,7 +33,7 @@ def dhash_image(path: Path, hash_size: int = 8) -> str:
     with Image.open(path) as image:
         image = ImageOps.exif_transpose(image).convert("L")
         image = image.resize((hash_size + 1, hash_size), Image.Resampling.LANCZOS)
-        pixels = list(image.getdata())
+        pixels = list(image.get_flattened_data())
 
     value = 0
     bit = 0
@@ -97,6 +98,7 @@ def scan_library(root_value: str, progress: ProgressCallback | None = None) -> d
 
                 digest = sha256_file(path)
                 perceptual_hash = dhash_image(path)
+                metadata = extract_image_metadata(path)
                 with Image.open(path) as image:
                     width, height = image.size
                     image_format = image.format
@@ -106,8 +108,9 @@ def scan_library(root_value: str, progress: ProgressCallback | None = None) -> d
                     """
                     INSERT INTO photos (
                         library_root, path, filename, sha256, perceptual_hash,
-                        size_bytes, modified_ns, width, height, image_format, thumbnail_path
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        size_bytes, modified_ns, width, height, image_format, thumbnail_path,
+                        metadata_json, captured_at, software, ai_generated_hint
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(path) DO UPDATE SET
                         library_root=excluded.library_root,
                         filename=excluded.filename,
@@ -119,12 +122,17 @@ def scan_library(root_value: str, progress: ProgressCallback | None = None) -> d
                         height=excluded.height,
                         image_format=excluded.image_format,
                         thumbnail_path=excluded.thumbnail_path,
+                        metadata_json=excluded.metadata_json,
+                        captured_at=excluded.captured_at,
+                        software=excluded.software,
+                        ai_generated_hint=excluded.ai_generated_hint,
                         indexed_at=CURRENT_TIMESTAMP
                     """,
                     (
                         str(root), str(path), path.name, digest, perceptual_hash,
                         file_stat.st_size, file_stat.st_mtime_ns, width, height,
-                        image_format, str(thumbnail),
+                        image_format, str(thumbnail), metadata["metadata_json"],
+                        metadata["captured_at"], metadata["software"], metadata["ai_generated_hint"],
                     ),
                 )
                 stats["indexed"] += 1
