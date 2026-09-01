@@ -1,0 +1,16 @@
+name: galeiria_desktop
+description: Galeiria Windows desktop application.
+publish_to: none
+version: 0.1.0+1
+
+environment:
+  sdk: '>=3.4.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  galeiria_client:
+    path: ../../packages/galeiria_client
+
+flutter:
+  uses-material-design: true
