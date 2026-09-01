@@ -1,6 +1,6 @@
 # Galeiria Mobile
 
-Aplicativo Android real, separado do app de PC.
+Aplicativo Android real em Flutter, separado do app de PC.
 
 ## Responsabilidades
 
@@ -22,4 +22,8 @@ Aplicativo Android real, separado do app de PC.
 
 ## Tecnologia
 
-Flutter e React Native são candidatos. A escolha será registrada após comparar reutilização de componentes open source e requisitos de sincronização em background no Android.
+Flutter foi escolhido para Android e Windows. Os apps são separados, mas usam `packages/galeiria_client` para o contrato REST.
+
+## Estado atual
+
+O shell Android permite informar o endereço do PC, testar conexão e navegar pelas thumbnails. Descoberta LAN, upload e background sync entram nas próximas etapas. O runner Android será gerado com o Flutter SDK; veja `scripts/bootstrap-flutter.ps1`.
