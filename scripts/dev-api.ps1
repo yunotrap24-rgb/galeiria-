@@ -1,3 +1,7 @@
+param(
+    [switch]$Lan
+)
+
 $ErrorActionPreference = 'Stop'
 
 $RepoRoot = Split-Path -Parent $PSScriptRoot
@@ -11,6 +15,12 @@ if (-not (Test-Path $Python)) {
 }
 
 & $Python -m pip install -e "$ApiPath[dev]"
-$env:GALEIRIA_HOST = '0.0.0.0'
+
+$HostAddress = if ($Lan) { '0.0.0.0' } else { '127.0.0.1' }
+if ($Lan) {
+    Write-Warning 'Modo LAN ativado. Dispositivos remotos precisam do token de pareamento do Galeiria.'
+}
+
+$env:GALEIRIA_HOST = $HostAddress
 $env:GALEIRIA_PORT = '8765'
-& $Python -m uvicorn app.main:app --app-dir $ApiPath --host 0.0.0.0 --port 8765 --reload
+& $Python -m uvicorn app.main:app --app-dir $ApiPath --host $HostAddress --port 8765 --reload
