@@ -1,0 +1,26 @@
+name: API tests
+
+on:
+  push:
+    branches: [main, dev/bootstrap-v1]
+  pull_request:
+    paths:
+      - 'services/api/**'
+      - '.github/workflows/api-tests.yml'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: services/api/pyproject.toml
+      - name: Install API
+        working-directory: services/api
+        run: pip install -e '.[dev]'
+      - name: Run tests
+        working-directory: services/api
+        run: pytest -q
