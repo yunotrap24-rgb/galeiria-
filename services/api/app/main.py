@@ -7,6 +7,16 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
+from .catalog import (
+    add_photo_to_project,
+    assign_tag,
+    create_project,
+    create_tag,
+    list_projects,
+    list_tags,
+    project_detail,
+    search_photos,
+)
 from .db import connect, init_db
 from .duplicates import exact_duplicate_groups, near_duplicate_pairs
 from .jobs import create_scan_job, get_scan_job
@@ -17,6 +27,26 @@ app = FastAPI(title="Galeiria API", version="0.2.0")
 
 class ScanRequest(BaseModel):
     path: str
+
+
+class TagRequest(BaseModel):
+    name: str
+
+
+class AssignTagRequest(BaseModel):
+    tag_id: int
+    source: str = "user"
+    confidence: float | None = None
+
+
+class ProjectRequest(BaseModel):
+    name: str
+    description: str = ""
+
+
+class AddProjectPhotoRequest(BaseModel):
+    photo_id: int
+    stage: str = "reference"
 
 
 @app.on_event("startup")
@@ -140,3 +170,58 @@ def exact_duplicates(limit: int = 100) -> list[dict]:
 @app.get("/api/v1/duplicates/near")
 def near_duplicates(max_distance: int = 5, limit: int = 200) -> list[dict]:
     return near_duplicate_pairs(max_distance=max_distance, limit=limit)
+
+
+@app.get("/api/v1/search")
+def search(q: str, limit: int = 100) -> list[dict]:
+    return search_photos(q, limit=limit)
+
+
+@app.get("/api/v1/tags")
+def tags() -> list[dict]:
+    return list_tags()
+
+
+@app.post("/api/v1/tags", status_code=201)
+def add_tag(request: TagRequest) -> dict:
+    try:
+        return create_tag(request.name)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/v1/photos/{photo_id}/tags", status_code=204)
+def tag_photo(photo_id: int, request: AssignTagRequest) -> None:
+    try:
+        assign_tag(photo_id, request.tag_id, request.source, request.confidence)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/api/v1/projects")
+def projects() -> list[dict]:
+    return list_projects()
+
+
+@app.post("/api/v1/projects", status_code=201)
+def add_project(request: ProjectRequest) -> dict:
+    try:
+        return create_project(request.name, request.description)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/v1/projects/{project_id}")
+def get_project(project_id: int) -> dict:
+    project = project_detail(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Projeto não encontrado.")
+    return project
+
+
+@app.post("/api/v1/projects/{project_id}/photos", status_code=204)
+def project_photo(project_id: int, request: AddProjectPhotoRequest) -> None:
+    try:
+        add_photo_to_project(project_id, request.photo_id, request.stage)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
