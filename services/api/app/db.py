@@ -71,6 +71,37 @@ def init_db() -> None:
                 finished_at TEXT
             );
 
+            CREATE TABLE IF NOT EXISTS tags (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE TABLE IF NOT EXISTS photo_tags (
+                photo_id INTEGER NOT NULL REFERENCES photos(id) ON DELETE CASCADE,
+                tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+                source TEXT NOT NULL DEFAULT 'user',
+                confidence REAL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY(photo_id, tag_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS projects (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                description TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE TABLE IF NOT EXISTS project_photos (
+                project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                photo_id INTEGER NOT NULL REFERENCES photos(id) ON DELETE CASCADE,
+                stage TEXT NOT NULL DEFAULT 'reference',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY(project_id, photo_id)
+            );
+
             CREATE INDEX IF NOT EXISTS idx_photos_sha256 ON photos(sha256);
             CREATE INDEX IF NOT EXISTS idx_photos_filename ON photos(filename);
             CREATE INDEX IF NOT EXISTS idx_scan_jobs_status ON scan_jobs(status);
