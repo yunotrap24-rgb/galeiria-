@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import mimetypes
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -22,7 +23,14 @@ from .duplicates import exact_duplicate_groups, near_duplicate_pairs
 from .jobs import create_scan_job, get_scan_job
 from .scanner import scan_library
 
-app = FastAPI(title="Galeiria API", version="0.2.0")
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    init_db()
+    yield
+
+
+app = FastAPI(title="Galeiria API", version="0.2.0", lifespan=lifespan)
 
 
 class ScanRequest(BaseModel):
@@ -47,11 +55,6 @@ class ProjectRequest(BaseModel):
 class AddProjectPhotoRequest(BaseModel):
     photo_id: int
     stage: str = "reference"
-
-
-@app.on_event("startup")
-def startup() -> None:
-    init_db()
 
 
 @app.get("/health")
@@ -111,7 +114,7 @@ def photos(limit: int = 100, offset: int = 0) -> list[dict]:
         rows = conn.execute(
             """
             SELECT id, filename, sha256, perceptual_hash, size_bytes, width, height,
-                   image_format, indexed_at
+                   image_format, captured_at, software, ai_generated_hint, indexed_at
             FROM photos
             ORDER BY id DESC
             LIMIT ? OFFSET ?
@@ -127,7 +130,8 @@ def photo_detail(photo_id: int) -> dict:
         row = conn.execute(
             """
             SELECT id, library_root, path, filename, sha256, perceptual_hash,
-                   size_bytes, modified_ns, width, height, image_format, indexed_at
+                   size_bytes, modified_ns, width, height, image_format, captured_at,
+                   software, ai_generated_hint, metadata_json, indexed_at
             FROM photos WHERE id=?
             """,
             (photo_id,),
