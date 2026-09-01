@@ -4,8 +4,8 @@ import mimetypes
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
 from .catalog import (
@@ -22,15 +22,30 @@ from .db import connect, init_db
 from .duplicates import exact_duplicate_groups, near_duplicate_pairs
 from .jobs import create_scan_job, get_scan_job
 from .scanner import scan_library
+from .security import request_has_valid_token, request_is_loopback, server_token
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     init_db()
+    server_token()
     yield
 
 
-app = FastAPI(title="Galeiria API", version="0.2.0", lifespan=lifespan)
+app = FastAPI(title="Galeiria API", version="0.3.0", lifespan=lifespan)
+
+
+@app.middleware("http")
+async def protect_lan_api(request: Request, call_next):
+    """Localhost is trusted; LAN clients must send the server pairing token."""
+    if request.url.path.startswith("/api/v1/") and not request_is_loopback(request):
+        if not request_has_valid_token(request):
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "Dispositivo não pareado com este Galeiria."},
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+    return await call_next(request)
 
 
 class ScanRequest(BaseModel):
@@ -59,7 +74,19 @@ class AddProjectPhotoRequest(BaseModel):
 
 @app.get("/health")
 def health() -> dict[str, str]:
-    return {"status": "ok", "version": "0.2.0"}
+    return {"status": "ok", "version": "0.3.0"}
+
+
+@app.get("/api/v1/server")
+def server_info() -> dict[str, str]:
+    return {"name": "Galeiria PC", "api_version": "v1", "pairing": "bearer-token"}
+
+
+@app.get("/api/v1/server/pairing-token")
+def pairing_token(request: Request) -> dict[str, str]:
+    if not request_is_loopback(request):
+        raise HTTPException(status_code=403, detail="O token de pareamento só pode ser exibido no próprio PC.")
+    return {"token": server_token()}
 
 
 @app.get("/api/v1/stats")
