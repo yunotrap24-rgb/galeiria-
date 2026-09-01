@@ -1,0 +1,1 @@
+"""Galeiria local API service."""
