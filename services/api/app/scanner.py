@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
-from typing import Iterable
+from typing import Callable, Iterable
 
 from PIL import Image, ImageOps, UnidentifiedImageError
 
@@ -10,6 +10,7 @@ from .db import connect, data_dir
 
 SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".tif", ".tiff"}
 THUMBNAIL_SIZE = (512, 512)
+ProgressCallback = Callable[[dict[str, int]], None]
 
 
 def iter_images(root: Path) -> Iterable[Path]:
@@ -24,6 +25,25 @@ def sha256_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
         while chunk := handle.read(chunk_size):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def dhash_image(path: Path, hash_size: int = 8) -> str:
+    """Return a 64-bit difference hash by default for near-duplicate candidates."""
+    with Image.open(path) as image:
+        image = ImageOps.exif_transpose(image).convert("L")
+        image = image.resize((hash_size + 1, hash_size), Image.Resampling.LANCZOS)
+        pixels = list(image.getdata())
+
+    value = 0
+    bit = 0
+    width = hash_size + 1
+    for y in range(hash_size):
+        row = y * width
+        for x in range(hash_size):
+            if pixels[row + x] > pixels[row + x + 1]:
+                value |= 1 << bit
+            bit += 1
+    return f"{value:0{hash_size * hash_size // 4}x}"
 
 
 def make_thumbnail(source: Path, sha256: str) -> Path:
@@ -42,11 +62,21 @@ def make_thumbnail(source: Path, sha256: str) -> Path:
     return target
 
 
-def scan_library(root_value: str) -> dict[str, int]:
+def _register_library(root: Path) -> None:
+    with connect() as conn:
+        conn.execute(
+            "INSERT INTO libraries(root) VALUES (?) ON CONFLICT(root) DO UPDATE SET enabled=1",
+            (str(root),),
+        )
+        conn.commit()
+
+
+def scan_library(root_value: str, progress: ProgressCallback | None = None) -> dict[str, int]:
     root = Path(root_value).expanduser().resolve()
     if not root.exists() or not root.is_dir():
         raise ValueError("A pasta da biblioteca não existe ou não é um diretório.")
 
+    _register_library(root)
     stats = {"found": 0, "indexed": 0, "skipped": 0, "errors": 0}
 
     with connect() as conn:
@@ -61,9 +91,12 @@ def scan_library(root_value: str) -> dict[str, int]:
 
                 if current and current["size_bytes"] == file_stat.st_size and current["modified_ns"] == file_stat.st_mtime_ns:
                     stats["skipped"] += 1
+                    if progress:
+                        progress(stats.copy())
                     continue
 
                 digest = sha256_file(path)
+                perceptual_hash = dhash_image(path)
                 with Image.open(path) as image:
                     width, height = image.size
                     image_format = image.format
@@ -72,13 +105,14 @@ def scan_library(root_value: str) -> dict[str, int]:
                 conn.execute(
                     """
                     INSERT INTO photos (
-                        library_root, path, filename, sha256, size_bytes,
-                        modified_ns, width, height, image_format, thumbnail_path
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        library_root, path, filename, sha256, perceptual_hash,
+                        size_bytes, modified_ns, width, height, image_format, thumbnail_path
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(path) DO UPDATE SET
                         library_root=excluded.library_root,
                         filename=excluded.filename,
                         sha256=excluded.sha256,
+                        perceptual_hash=excluded.perceptual_hash,
                         size_bytes=excluded.size_bytes,
                         modified_ns=excluded.modified_ns,
                         width=excluded.width,
@@ -88,14 +122,22 @@ def scan_library(root_value: str) -> dict[str, int]:
                         indexed_at=CURRENT_TIMESTAMP
                     """,
                     (
-                        str(root), str(path), path.name, digest, file_stat.st_size,
-                        file_stat.st_mtime_ns, width, height, image_format, str(thumbnail),
+                        str(root), str(path), path.name, digest, perceptual_hash,
+                        file_stat.st_size, file_stat.st_mtime_ns, width, height,
+                        image_format, str(thumbnail),
                     ),
                 )
                 stats["indexed"] += 1
             except (OSError, UnidentifiedImageError, ValueError):
                 stats["errors"] += 1
 
+            if progress:
+                progress(stats.copy())
+
+        conn.execute(
+            "UPDATE libraries SET last_scanned_at=CURRENT_TIMESTAMP WHERE root=?",
+            (str(root),),
+        )
         conn.commit()
 
     return stats
